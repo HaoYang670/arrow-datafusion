@@ -17,6 +17,8 @@
 
 //! Simplify expressions optimizer rule and implementation
 
+use std::sync::Arc;
+
 use crate::expr_simplifier::{ExprSimplifier, SimplifyContext};
 use crate::{expr_simplifier::SimplifyInfo, OptimizerConfig, OptimizerRule};
 use arrow::array::new_null_array;
@@ -24,6 +26,7 @@ use arrow::datatypes::{DataType, Field, Schema, DECIMAL128_MAX_PRECISION};
 use arrow::error::ArrowError;
 use arrow::record_batch::RecordBatch;
 use datafusion_common::{DFSchema, DataFusionError, Result, ScalarValue};
+use datafusion_expr::Subquery;
 use datafusion_expr::expr::BinaryExpr;
 use datafusion_expr::{
     expr::Between,
@@ -671,6 +674,23 @@ impl<'a, S: SimplifyInfo> ExprRewriter for Simplifier<'a, S> {
 
         let info = self.info;
         let new_expr = match expr {
+            Expr::ScalarSubquery(subquery) => {
+                let rule = SimplifyExpressions::new();
+                let new_plan = rule.optimize_internal(&subquery.subquery, info.execution_props())?;
+                Expr::ScalarSubquery(Subquery{subquery: Arc::new(new_plan)})
+            },
+
+            Expr::InSubquery { expr, subquery, negated } => {
+                let new_expr = self.mutate(*expr)?;
+                let rule = SimplifyExpressions::new();
+                let new_plan = rule.optimize_internal(&subquery.subquery, info.execution_props())?;
+                Expr::InSubquery {
+                    expr: Box::new(new_expr),
+                    subquery: Subquery { subquery: Arc::new(new_plan) },
+                    negated
+                }
+            }
+
             //
             // Rules for Eq
             //
