@@ -72,6 +72,7 @@ pub trait SimplifyInfo {
 /// let simplified = simplifier.simplify(expr).unwrap();
 /// assert_eq!(simplified, col("b").lt(lit(2)));
 /// ```
+#[derive(Clone)]
 pub struct SimplifyContext<'a> {
     schemas: Vec<DFSchemaRef>,
     props: &'a ExecutionProps,

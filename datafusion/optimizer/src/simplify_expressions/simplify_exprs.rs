@@ -51,7 +51,13 @@ impl OptimizerRule for SimplifyExpressions {
         let mut execution_props = ExecutionProps::new();
         execution_props.query_execution_start_time =
             optimizer_config.query_execution_start_time();
-        self.optimize_internal(plan, &execution_props)
+        let info = plan
+            .all_schemas()
+            .into_iter()
+            .fold(SimplifyContext::new(&execution_props), |context, schema| {
+                context.with_schema(schema.clone())
+            });
+        self.optimize_internal(plan, &info)
     }
 }
 
@@ -59,26 +65,19 @@ impl SimplifyExpressions {
     fn optimize_internal(
         &self,
         plan: &LogicalPlan,
-        execution_props: &ExecutionProps,
+        info: &SimplifyContext,
     ) -> Result<LogicalPlan> {
         // We need to pass down the all schemas within the plan tree to `optimize_expr` in order to
         // to evaluate expression types. For example, a projection plan's schema will only include
         // projected columns. With just the projected schema, it's not possible to infer types for
         // expressions that references non-projected columns within the same project plan or its
         // children plans.
-        let info = plan
-            .all_schemas()
-            .into_iter()
-            .fold(SimplifyContext::new(execution_props), |context, schema| {
-                context.with_schema(schema.clone())
-            });
-
-        let simplifier = ExprSimplifier::new(info);
+        let simplifier = ExprSimplifier::new(info.clone());
 
         let new_inputs = plan
             .inputs()
             .iter()
-            .map(|input| self.optimize_internal(input, execution_props))
+            .map(|input| self.optimize_internal(input, info))
             .collect::<Result<Vec<_>>>()?;
 
         let expr = plan
